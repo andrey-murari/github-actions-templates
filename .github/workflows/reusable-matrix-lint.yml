@@ -1,0 +1,64 @@
+# ============================================
+# REUSABLE WORKFLOW: Matrix Lint
+# Recebe a lista de versões numa única chamada
+# e expande o matrix aqui dentro.
+#
+# Caller:
+#   jobs:
+#     lint:
+#       uses: ./.github/workflows/reusable-matrix-lint.yml
+#       with:
+#         python-versions: '["3.14.6", "3.13", "3.12"]'
+# ============================================
+name: Reusable Matrix Lint
+
+# ============================================
+# WORKFLOW_CALL: Torna este workflow reutilizável
+# Diferente de "on: push", este workflow só executa
+# quando chamado por outro workflow.
+# workflow_call não tem tipo array: a lista chega
+# como string JSON e o fromJSON monta o matrix.
+# ============================================
+on:
+  workflow_call:
+    inputs:
+      python-versions:
+        description: 'Lista JSON de versões do Python, ex. ["3.14.6", "3.13", "3.12"]'
+        required: false
+        type: string
+        default: '["3.14.6", "3.13", "3.12"]'
+
+jobs:
+  lint:
+    name: Lint Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+
+    # ============================================
+    # STRATEGY: Uma combinação por versão recebida.
+    # fail-fast false deixa as outras versões
+    # terminarem quando uma falha.
+    # ============================================
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(inputs.python-versions) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up Python
+        run: uv python install ${{ matrix.python-version }}
+
+      # O projeto não declara ruff nem pylint. O job confere o lock e a sintaxe.
+      - name: Check lockfile
+        run: uv lock --check
+
+      - name: Syntax-check Python sources
+        run: uv run --no-project --python ${{ matrix.python-version }} python -m compileall -q src tests main.py

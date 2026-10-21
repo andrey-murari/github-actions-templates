@@ -1,0 +1,65 @@
+# ============================================
+# REUSABLE WORKFLOW: Matrix Security
+# Recebe a lista de versões numa única chamada
+# e expande o matrix aqui dentro.
+#
+# Caller:
+#   jobs:
+#     security:
+#       uses: ./.github/workflows/reusable-matrix-security.yml
+#       with:
+#         python-versions: '["3.14.6", "3.13", "3.12"]'
+# ============================================
+name: Reusable Matrix Security
+
+# ============================================
+# WORKFLOW_CALL: Torna este workflow reutilizável
+# Diferente de "on: push", este workflow só executa
+# quando chamado por outro workflow.
+# workflow_call não tem tipo array: a lista chega
+# como string JSON e o fromJSON monta o matrix.
+# ============================================
+on:
+  workflow_call:
+    inputs:
+      python-versions:
+        description: 'Lista JSON de versões do Python, ex. ["3.14.6", "3.13", "3.12"]'
+        required: false
+        type: string
+        default: '["3.14.6", "3.13", "3.12"]'
+
+jobs:
+  security:
+    name: Security Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+
+    # ============================================
+    # STRATEGY: Uma combinação por versão recebida.
+    # fail-fast false deixa as outras versões
+    # terminarem quando uma falha.
+    # ============================================
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(inputs.python-versions) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up Python
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Export locked requirements
+        run: uv export --locked --no-dev --no-emit-project --no-hashes --format requirements.txt --output-file "$RUNNER_TEMP/requirements.txt"
+
+      # Reporta CVEs sem bloquear os stages seguintes (mesmo papel do npm audit || true).
+      - name: Audit dependencies
+        continue-on-error: true
+        run: uvx pip-audit --requirement "$RUNNER_TEMP/requirements.txt" --no-deps
